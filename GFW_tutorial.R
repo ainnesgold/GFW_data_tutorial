@@ -1,15 +1,17 @@
 ##GFW Data Exploration
 
-#load the packages you need for the loop below
+#load the packages
 library(tidyverse)
 library(raster)
 library(ggpubr)
+
+#Loop through all the files in folder and combine them
+#I've already done this for you so you don't need to run it again (it takes a while)
 # library(lubridate)
-# library(data.table)
+# library(data.table) 
 
 #loop through all files to combine them into one dataframe
 #When you download from GFW, it will be a folder with a name like "mmsi-daily-csvs-10-v2-2020"
-#I've already done this for you so you don't need to run it again (it takes a while)
 
 # files <- list.files(path="mmsi-daily-csvs-10-v2-2020", pattern="*.csv", full.names=TRUE, recursive=TRUE)
 # datalist = list()
@@ -25,19 +27,21 @@ library(ggpubr)
  # datalist[[i]] <- temp
 # }
 
-# fishing_2020 = do.call(rbind, datalist)
+# fishing_2020 = do.call(rbind, datalist) #this combines them into one dataframe
 # write.csv(fishing_2020, "fishing_2020.csv")
 
 ##now you have a new file containing all the fishing in 2020
 #read in the csv since you didn't run the loop above - it's a large file so this will take a couple minutes
 fishing_2020 <- read.csv("fishing_2020.csv")
 
-#Rough boundary around Hawai'i
+#We're going to look at commercial fishing in Hawai'i throughout 2020
+#Create a rough boundary around Hawai'i
 fishing_2020_hi <- fishing_2020 %>%
   filter(cell_ll_lat > 18 & cell_ll_lat < 23 & cell_ll_lon < -154 & cell_ll_lon > -160) %>%
   group_by(date, month, year, cell_ll_lat, cell_ll_lon) %>%
   summarize(sum_fishing_hours = sum(fishing_hours))
 
+#this sorts the months into the order I want them to plot in
 fishing_2020_hi$month <- factor(fishing_2020_hi$month, levels=c("January", "February", "March", "April", "May", "June", "July", "August",
                                                              "September", "October", "November", "December"))
 
@@ -48,9 +52,19 @@ ggplot(data=fishing_2020_hi %>%
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
+#now we will sum all fishing in every month so we get an annual total for each cell
+HI_annual <- fishing_2020_hi %>%
+  group_by(cell_ll_lat, 
+           cell_ll_lon) %>%
+  summarize(annual_total = sum(sum_fishing_hours)) %>%
+  filter(annual_total < 200) #there are a few really high values that make it hard to see the smaller differences - not sure if they're a typo or not but I've taken them out for now
 
-HI_raster <- rasterFromXYZ(fishing_2020_hi[, c('cell_ll_lon', 'cell_ll_lat', 'sum_fishing_hours')])
-spplot(HI_raster)
+HI_raster <- rasterFromXYZ(HI_annual[, c('cell_ll_lon', 'cell_ll_lat', 'annual_total')])
+spplot(HI_raster) #something is off here, a couple super high values, probably a typo
+
+
+
+
 
 
 #Same idea but a more global level
@@ -66,7 +80,9 @@ p1 <- ggplot(data=fishing_2020_jan %>%
        aes(x=date, y=total_fishing)) + 
   geom_point() +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + #rotates axis text
+  ylim(80000, 180000) #manually setting limits so we can compare it to the next plot
+p1 
 
 jan_raster <- rasterFromXYZ(fishing_2020_jan[, c('cell_ll_lon', 'cell_ll_lat', 'sum_fishing_hours')])
 spplot(jan_raster)
@@ -83,7 +99,9 @@ p2 <- ggplot(data=fishing_2020_aug %>%
        aes(x=date, y=total_fishing)) + 
   geom_point() +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylim(80000, 180000) #manually setting limits so we can compare it to the previous plot
+p2
 
 aug_raster <- rasterFromXYZ(fishing_2020_aug[, c('cell_ll_lon', 'cell_ll_lat', 'sum_fishing_hours')])
 spplot(aug_raster)
@@ -96,11 +114,12 @@ ggarrange(p1, p2, nrow=2)
 
 
 
+
 ######Using the new GFW R package
 #devtools::install_github("GlobalFishingWatch/gfwr")
 library(gfwr)
 
-#instructions on how to get your own API token:
+#instructions on how to get your own API token (we are using one I got below):
 #https://github.com/GlobalFishingWatch/gfwr
 
 #we can use mine for now
@@ -136,7 +155,7 @@ get_event(event_type='encounter',
           key = key
 )
 
-#download list of USA trawlers
+#download list of USA vessels
 usa_fishing <- get_vessel_info(
   query = "flag = 'USA'", 
   search_type = "advanced", 
@@ -172,13 +191,16 @@ get_raster(spatial_resolution = 'low',
 # use EEZ function to get EEZ code of Cote d'Ivoire
 code_eez <- get_region_id(region_name = 'CIV', region_source = 'eez', key = key)
 
-get_raster(spatial_resolution = 'low',
+ras <- get_raster(spatial_resolution = 'low',
            temporal_resolution = 'yearly',
            group_by = 'flag',
            date_range = '2021-01-01,2021-10-01',
            region = code_eez$id,
            region_source = 'eez',
            key = key)
+
+dfr <- rasterFromXYZ(ras)  #Convert first two columns as lon-lat and third as value                
+spplot(dfr$Apparent.Fishing.hours)
 
 #You could search for just one word in the name of the EEZ and then decide which one you want:
 (get_region_id(region_name = 'French', region_source = 'eez', key = key))
