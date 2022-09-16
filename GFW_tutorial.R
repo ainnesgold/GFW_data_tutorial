@@ -34,6 +34,8 @@ library(ggpubr)
 #read in the csv since you didn't run the loop above - it's a large file so this will take a couple minutes
 fishing_2020 <- read.csv("fishing_2020.csv")
 
+#creating a subset of the large file
+
 #We're going to look at commercial fishing in Hawai'i throughout 2020
 #Create a rough boundary around Hawai'i
 fishing_2020_hi <- fishing_2020 %>%
